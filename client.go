@@ -343,7 +343,9 @@ func (c *Client) importColumns(field *Field,
 		return c.importColumnsRoaring(field, shard, records, nodes, options, state)
 	}
 
-	sort.Sort(recordSort(records))
+	if !options.skipSort {
+		sort.Sort(recordSort(records))
+	}
 
 	for _, node := range nodes {
 		uri := node.URI()
@@ -1240,6 +1242,7 @@ type ImportOptions struct {
 	clear              bool
 	rowKeyCacheSize    int
 	columnKeyCacheSize int
+	skipSort           bool
 }
 
 func (opt *ImportOptions) withDefaults() (updated ImportOptions) {
@@ -1298,6 +1301,22 @@ func OptImportClear(clear bool) ImportOption {
 func OptImportRoaring(enable bool) ImportOption {
 	return func(options *ImportOptions) error {
 		options.wantRoaring = enable
+		return nil
+	}
+}
+
+// SetSorting tells the importer whether or not to sort batches of records, on
+// by default. Sorting imposes some performance cost, especially on data that's
+// already sorted, but dramatically improves performance in pathological
+// cases. It is enabled by default because the pathological cases are awful,
+// and the performance hit isn't very large.
+func OptImportSort(sorting bool) ImportOption {
+	return func(options *ImportOptions) error {
+		// skipSort is expressed negatively because we want to
+		// keep sorting enabled by default, so the zero value should
+		// be that default behavior. The client option expresses it
+		// positively because that's easier for API users.
+		options.skipSort = !sorting
 		return nil
 	}
 }
