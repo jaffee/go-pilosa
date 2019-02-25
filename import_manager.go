@@ -10,6 +10,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const recordBatchSize = 16
+
 type recordImportManager struct {
 	client *Client
 }
@@ -41,7 +43,7 @@ func (rim recordImportManager) Run(field *Field, iterator RecordIterator, option
 
 	for i := range recordChans {
 		recordChans[i] = make(chan []Record, options.batchSize)
-		recordBufs[i] = make([]Record, 0, 16)
+		recordBufs[i] = make([]Record, 0, recordBatchSize)
 		chans := importWorkerChannels{
 			records: recordChans[i],
 			errs:    errChan,
@@ -69,7 +71,7 @@ func (rim recordImportManager) Run(field *Field, iterator RecordIterator, option
 			recordBufs[idx] = append(recordBufs[idx], record)
 			if len(recordBufs[idx]) == cap(recordBufs[idx]) {
 				recordChans[idx] <- recordBufs[idx]
-				recordBufs[idx] = make([]Record, 0, 16)
+				recordBufs[idx] = make([]Record, 0, recordBatchSize)
 			}
 		}
 		// send any trailing data
