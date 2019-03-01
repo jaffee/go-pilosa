@@ -295,7 +295,7 @@ func (c *Client) Schema() (*Schema, error) {
 	}
 	schema := NewSchema()
 	for _, indexInfo := range indexes {
-		index := schema.indexWithOptions(indexInfo.Name, indexInfo.Options.asIndexOptions())
+		index := schema.indexWithOptions(indexInfo.Name, indexInfo.ShardWidth, indexInfo.Options.asIndexOptions())
 		for _, fieldInfo := range indexInfo.Fields {
 			index.fieldWithOptions(fieldInfo.Name, fieldInfo.Options.asFieldOptions())
 		}
@@ -322,6 +322,26 @@ func (c *Client) ImportField(field *Field, iterator RecordIterator, options ...I
 				importOptions.hasRoaring = c.hasRoaringImportSupport(field)
 			}
 			importRecordsFunction(c.importColumns)(&importOptions)
+		}
+	}
+	// if the index doesn't have its shardWidth set, we need to get it from the schema
+	if field.index.shardWidth == 0 {
+		indexes, err := c.readSchema()
+		if err != nil {
+			return err
+		}
+		for _, index := range indexes {
+			if index.Name != field.index.name {
+				continue
+			}
+			indexCopy := field.index.copy()
+			indexCopy.shardWidth = index.ShardWidth
+			field = field.copy()
+			field.index = indexCopy
+			break
+		}
+		if field.index.shardWidth == 0 {
+			return fmt.Errorf("index '%s' doesn't have a shard width. Run client.SyncSchema before import.", field.index.name)
 		}
 	}
 	return c.importManager.Run(field, iterator, importOptions)
@@ -363,6 +383,8 @@ func (c *Client) importColumnsRoaring(field *Field,
 	nodes []fragmentNode,
 	options *ImportOptions,
 	state *importState) error {
+
+	shardWidth := field.index.shardWidth
 	columns := make([]Column, 0, len(records))
 	for _, rec := range records {
 		columns = append(columns, rec.(Column))
@@ -384,9 +406,9 @@ func (c *Client) importColumnsRoaring(field *Field,
 	uri := nodes[0].URI()
 	var views viewImports
 	if field.options.fieldType == FieldTypeTime {
-		views = columnsToBitmapTimeField(field.options.timeQuantum, options.shardWidth, columns, field.options.noStandardView)
+		views = columnsToBitmapTimeField(field.options.timeQuantum, shardWidth, columns, field.options.noStandardView)
 	} else {
-		views = columnsToBitmap(options.shardWidth, columns)
+		views = columnsToBitmap(shardWidth, columns)
 	}
 	return c.importRoaringBitmap(uri, field, shard, views, options)
 }
@@ -1241,7 +1263,6 @@ type importState struct {
 
 type ImportOptions struct {
 	threadCount           int
-	shardWidth            uint64
 	timeout               time.Duration
 	batchSize             int
 	statusChan            chan<- ImportStatusUpdate
@@ -1261,7 +1282,6 @@ type ImportOptions struct {
 
 func (opt *ImportOptions) withDefaults() (updated ImportOptions) {
 	updated = *opt
-	updated.shardWidth = 1048576
 
 	if updated.threadCount <= 0 {
 		updated.threadCount = 1
@@ -1403,10 +1423,11 @@ type SchemaInfo struct {
 
 // SchemaIndex contains index information.
 type SchemaIndex struct {
-	Name    string        `json:"name"`
-	Options SchemaOptions `json:"options"`
-	Fields  []SchemaField `json:"fields"`
-	Shards  []uint64      `json:"shards"`
+	Name       string        `json:"name"`
+	Options    SchemaOptions `json:"options"`
+	Fields     []SchemaField `json:"fields"`
+	Shards     []uint64      `json:"shards"`
+	ShardWidth uint64        `json:"shardWidth"`
 }
 
 // SchemaField contains field information.

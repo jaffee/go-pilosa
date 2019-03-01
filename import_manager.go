@@ -29,7 +29,7 @@ type importWorkerChannels struct {
 }
 
 func (rim recordImportManager) Run(field *Field, iterator RecordIterator, options ImportOptions) error {
-	shardWidth := options.shardWidth
+	shardWidth := field.index.shardWidth
 	threadCount := uint64(options.threadCount)
 	recordChans := make([]chan []Record, threadCount)
 	recordBufs := make([][]Record, threadCount)
@@ -179,7 +179,7 @@ func recordImportWorker(id int, client *Client, field *Field, chans importWorker
 
 	recordCount := 0
 	batchSize := options.batchSize
-	shardWidth := options.shardWidth
+	shardWidth := field.index.shardWidth
 
 readRecords:
 	for records := range recordChan {
