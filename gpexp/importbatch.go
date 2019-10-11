@@ -70,15 +70,16 @@ type Batch struct {
 	// value for a field, rowIDSets stores that information.
 	rowIDSets map[int][][]uint64
 
-	// values holds the values for each record of an int field
-	values map[string][]int64
+	// values is a map from field index (of an int field) to a slice
+	// of the int values for that field.
+	values map[int][]int64
 
 	// times holds a time for each record. (if any of the fields are time fields)
 	times []QuantizedTime
 
 	// nullIndices holds a slice of indices into b.ids for each
 	// integer field which has nil values.
-	nullIndices map[string][]uint64
+	nullIndices map[int][]uint64
 
 	// TODO support mutex and bool fields.
 
@@ -125,7 +126,7 @@ func NewBatch(client *pilosa.Client, size int, index *pilosa.Index, fields []*pi
 	}
 	headerMap := make(map[string]*pilosa.Field, len(fields))
 	rowIDs := make(map[int][]uint64, len(fields))
-	values := make(map[string][]int64)
+	values := make(map[int][]int64)
 	tt := make(map[int]map[string][]int, len(fields))
 	ttSets := make(map[int]map[string][]int)
 	hasTime := false
@@ -141,7 +142,7 @@ func NewBatch(client *pilosa.Client, size int, index *pilosa.Index, fields []*pi
 			rowIDs[i] = make([]uint64, 0, size) // TODO make this on-demand when it gets used. could be a string array field.
 			hasTime = typ == pilosa.FieldTypeTime || hasTime
 		case pilosa.FieldTypeInt:
-			values[field.Name()] = make([]int64, 0, size)
+			values[i] = make([]int64, 0, size)
 		default:
 			return nil, errors.Errorf("field type %s is not currently supported through Batch", typ)
 		}
@@ -155,7 +156,7 @@ func NewBatch(client *pilosa.Client, size int, index *pilosa.Index, fields []*pi
 		rowIDs:          rowIDs,
 		rowIDSets:       make(map[int][][]uint64),
 		values:          values,
-		nullIndices:     make(map[string][]uint64),
+		nullIndices:     make(map[int][]uint64),
 		toTranslate:     tt,
 		toTranslateSets: ttSets,
 		toTranslateID:   make(map[string][]int),
@@ -334,7 +335,7 @@ func (b *Batch) Add(rec Row) error {
 		case uint64:
 			b.rowIDs[i] = append(b.rowIDs[i], val)
 		case int64:
-			b.values[field.Name()] = append(b.values[field.Name()], val)
+			b.values[i] = append(b.values[i], val)
 		case []string:
 			rowIDSets, ok := b.rowIDSets[i]
 			if !ok {
@@ -361,13 +362,13 @@ func (b *Batch) Add(rec Row) error {
 			b.rowIDSets[i] = append(rowIDSets, rowIDs)
 		case nil:
 			if field.Opts().Type() == pilosa.FieldTypeInt {
-				b.values[field.Name()] = append(b.values[field.Name()], 0)
-				nullIndices, ok := b.nullIndices[field.Name()]
+				b.values[i] = append(b.values[i], 0)
+				nullIndices, ok := b.nullIndices[i]
 				if !ok {
 					nullIndices = make([]uint64, 0)
 				}
 				nullIndices = append(nullIndices, uint64(curPos))
-				b.nullIndices[field.Name()] = nullIndices
+				b.nullIndices[i] = nullIndices
 
 			} else {
 				b.rowIDs[i] = append(b.rowIDs[i], nilSentinel)
@@ -628,14 +629,15 @@ func (b *Batch) importValueData() error {
 	}
 	eg := errgroup.Group{}
 	ids := make([]uint64, len(b.ids))
-	for field, values := range b.values {
+	for i, values := range b.values {
+		field := b.header[i].Name()
 		// grow our temp ids slice to full length
 		ids = ids[:len(b.ids)]
 		// copy orig ids back in
 		copy(ids, b.ids)
 
 		// trim out null values from ids and values.
-		nullIndices := b.nullIndices[field]
+		nullIndices := b.nullIndices[i]
 		// TODO(jaffee) I think this may be very inefficient. It looks
 		// like we're copying the `ids` and `values` slices over
 		// themselves (an O(n) operation) for each nullIndex so this

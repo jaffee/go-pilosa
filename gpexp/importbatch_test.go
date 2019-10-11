@@ -253,11 +253,11 @@ func TestBatches(t *testing.T) {
 		}
 	}
 
-	if !reflect.DeepEqual(b.values["three"], []int64{99, -10, 99, -10, 99, -10, 99, -10, 0}) {
-		t.Fatalf("unexpected values: %v", b.values["three"])
+	if !reflect.DeepEqual(b.values[3], []int64{99, -10, 99, -10, 99, -10, 99, -10, 0}) {
+		t.Fatalf("unexpected values: %v", b.values[3])
 	}
-	if !reflect.DeepEqual(b.nullIndices["three"], []uint64{8}) {
-		t.Fatalf("unexpected nullIndices: %v", b.nullIndices["three"])
+	if !reflect.DeepEqual(b.nullIndices[3], []uint64{8}) {
+		t.Fatalf("unexpected nullIndices: %v", b.nullIndices[3])
 	}
 
 	if len(b.toTranslate[1]) != 2 {
@@ -306,8 +306,8 @@ func TestBatches(t *testing.T) {
 		t.Fatalf("should have gotten already full batch error, but got %v", err)
 	}
 
-	if !reflect.DeepEqual(b.values["three"], []int64{99, -10, 99, -10, 99, -10, 99, -10, 0, 0}) {
-		t.Fatalf("unexpected values: %v", b.values["three"])
+	if !reflect.DeepEqual(b.values[3], []int64{99, -10, 99, -10, 99, -10, 99, -10, 0, 0}) {
+		t.Fatalf("unexpected values: %v", b.values[3])
 	}
 
 	err = b.doTranslation()
