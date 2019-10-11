@@ -65,10 +65,10 @@ type Batch struct {
 	// length batchSize which contain row IDs.
 	rowIDs map[int][]uint64
 
-	// rowIDSets is a map from field name to a batchSize slice of
+	// rowIDSets is a map from field index to a batchSize slice of
 	// slices of row IDs. When a given record can have more than one
 	// value for a field, rowIDSets stores that information.
-	rowIDSets map[string][][]uint64
+	rowIDSets map[int][][]uint64
 
 	// values holds the values for each record of an int field
 	values map[string][]int64
@@ -85,10 +85,10 @@ type Batch struct {
 	// for each field, keep a map of key to which record indexes that key mapped to
 	toTranslate map[int]map[string][]int
 
-	// toTranslateSets is a map from field name to a map of string
+	// toTranslateSets is a map from field index to a map of string
 	// keys that need to be translated to sets of record indexes which
 	// those keys map to.
-	toTranslateSets map[string]map[string][]int
+	toTranslateSets map[int]map[string][]int
 
 	// for string ids which we weren't able to immediately translate,
 	// keep a map of which record(s) each string id maps to.
@@ -127,7 +127,7 @@ func NewBatch(client *pilosa.Client, size int, index *pilosa.Index, fields []*pi
 	rowIDs := make(map[int][]uint64, len(fields))
 	values := make(map[string][]int64)
 	tt := make(map[int]map[string][]int, len(fields))
-	ttSets := make(map[string]map[string][]int)
+	ttSets := make(map[int]map[string][]int)
 	hasTime := false
 	for i, field := range fields {
 		headerMap[field.Name()] = field
@@ -136,7 +136,7 @@ func NewBatch(client *pilosa.Client, size int, index *pilosa.Index, fields []*pi
 		case pilosa.FieldTypeDefault, pilosa.FieldTypeSet, pilosa.FieldTypeTime:
 			if opts.Keys() {
 				tt[i] = make(map[string][]int)
-				ttSets[field.Name()] = make(map[string][]int)
+				ttSets[i] = make(map[string][]int)
 			}
 			rowIDs[i] = make([]uint64, 0, size) // TODO make this on-demand when it gets used. could be a string array field.
 			hasTime = typ == pilosa.FieldTypeTime || hasTime
@@ -153,7 +153,7 @@ func NewBatch(client *pilosa.Client, size int, index *pilosa.Index, fields []*pi
 		index:           index,
 		ids:             make([]uint64, 0, size),
 		rowIDs:          rowIDs,
-		rowIDSets:       make(map[string][][]uint64),
+		rowIDSets:       make(map[int][][]uint64),
 		values:          values,
 		nullIndices:     make(map[string][]uint64),
 		toTranslate:     tt,
@@ -336,7 +336,7 @@ func (b *Batch) Add(rec Row) error {
 		case int64:
 			b.values[field.Name()] = append(b.values[field.Name()], val)
 		case []string:
-			rowIDSets, ok := b.rowIDSets[field.Name()]
+			rowIDSets, ok := b.rowIDSets[i]
 			if !ok {
 				rowIDSets = make([][]uint64, len(b.ids)-1, cap(b.ids))
 			} else {
@@ -350,15 +350,15 @@ func (b *Batch) Add(rec Row) error {
 				} else if ok {
 					rowIDs = append(rowIDs, rowID)
 				} else {
-					ints, ok := b.toTranslateSets[field.Name()][k]
+					ints, ok := b.toTranslateSets[i][k]
 					if !ok {
 						ints = make([]int, 0, 1)
 					}
 					ints = append(ints, curPos)
-					b.toTranslateSets[field.Name()][k] = ints
+					b.toTranslateSets[i][k] = ints
 				}
 			}
-			b.rowIDSets[field.Name()] = append(rowIDSets, rowIDs)
+			b.rowIDSets[i] = append(rowIDSets, rowIDs)
 		case nil:
 			if field.Opts().Type() == pilosa.FieldTypeInt {
 				b.values[field.Name()] = append(b.values[field.Name()], 0)
@@ -472,7 +472,8 @@ func (b *Batch) doTranslation() error {
 		}
 	}
 
-	for fieldName, tt := range b.toTranslateSets {
+	for i, tt := range b.toTranslateSets {
+		fieldName := b.header[i].Name()
 		keys = keys[:0]
 
 		for k := range tt {
@@ -490,7 +491,7 @@ func (b *Batch) doTranslation() error {
 		if err := b.transCache.AddRows(b.index.Name(), fieldName, keys, ids); err != nil {
 			return errors.Wrap(err, "adding rows to cache")
 		}
-		rowIDSets := b.rowIDSets[fieldName]
+		rowIDSets := b.rowIDSets[i]
 		for j, key := range keys {
 			rowID := ids[j]
 			for _, recordIdx := range tt[key] {
@@ -575,11 +576,11 @@ func (b *Batch) makeFragments() (fragments, error) {
 		}
 	}
 
-	for fname, rowIDSets := range b.rowIDSets {
+	for i, rowIDSets := range b.rowIDSets {
 		if len(rowIDSets) == 0 {
 			continue
 		}
-		field := b.headerMap[fname]
+		field := b.header[i]
 		opts := field.Opts()
 		curShard := ^uint64(0) // impossible sentinel value for shard.
 		var curBM *roaring.Bitmap
@@ -590,7 +591,7 @@ func (b *Batch) makeFragments() (fragments, error) {
 			}
 			if col/shardWidth != curShard {
 				curShard = col / shardWidth
-				curBM = frags.GetOrCreate(curShard, fname, "")
+				curBM = frags.GetOrCreate(curShard, field.Name(), "")
 			}
 			// TODO this is super ugly, but we want to avoid setting
 			// bits on the standard view in the specific case when
@@ -608,7 +609,7 @@ func (b *Batch) makeFragments() (fragments, error) {
 					return nil, errors.Wrap(err, "calculating views")
 				}
 				for _, view := range views {
-					tbm := frags.GetOrCreate(curShard, fname, view)
+					tbm := frags.GetOrCreate(curShard, field.Name(), view)
 					for _, row := range rowIDs {
 						tbm.DirectAdd(row*shardWidth + (col % shardWidth))
 					}
@@ -696,15 +697,14 @@ func (b *Batch) reset() {
 	b.ids = b.ids[:0]
 	b.times = b.times[:0]
 	for i, rowIDs := range b.rowIDs {
-		fieldName := b.header[i].Name()
 		b.rowIDs[i] = rowIDs[:0]
-		rowIDSet := b.rowIDSets[fieldName]
-		b.rowIDSets[fieldName] = rowIDSet[:0]
+		rowIDSet := b.rowIDSets[i]
+		b.rowIDSets[i] = rowIDSet[:0]
 		m := b.toTranslate[i]
 		for k := range m {
 			delete(m, k) // TODO pool these slices
 		}
-		m = b.toTranslateSets[fieldName]
+		m = b.toTranslateSets[i]
 		for k := range m {
 			delete(m, k)
 		}

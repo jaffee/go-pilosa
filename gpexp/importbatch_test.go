@@ -107,7 +107,7 @@ func TestStringSlice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("adding to batch: %v", err)
 	}
-	if got := b.toTranslateSets["strslice"]["a"]; !reflect.DeepEqual(got, []int{0}) {
+	if got := b.toTranslateSets[0]["a"]; !reflect.DeepEqual(got, []int{0}) {
 		t.Fatalf("expected []int{0}, got: %v", got)
 	}
 
@@ -117,16 +117,16 @@ func TestStringSlice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("adding to batch: %v", err)
 	}
-	if got := b.toTranslateSets["strslice"]["a"]; !reflect.DeepEqual(got, []int{0, 1}) {
+	if got := b.toTranslateSets[0]["a"]; !reflect.DeepEqual(got, []int{0, 1}) {
 		t.Fatalf("expected []int{0,1}, got: %v", got)
 	}
-	if got := b.toTranslateSets["strslice"]["b"]; !reflect.DeepEqual(got, []int{1}) {
+	if got := b.toTranslateSets[0]["b"]; !reflect.DeepEqual(got, []int{1}) {
 		t.Fatalf("expected []int{1}, got: %v", got)
 	}
-	if got, ok := b.toTranslateSets["strslice"]["c"]; ok {
+	if got, ok := b.toTranslateSets[0]["c"]; ok {
 		t.Fatalf("should be nothing at c, got: %v", got)
 	}
-	if got := b.rowIDSets["strslice"][1]; !reflect.DeepEqual(got, []uint64{9}) {
+	if got := b.rowIDSets[0][1]; !reflect.DeepEqual(got, []uint64{9}) {
 		t.Fatalf("expected c to map to rowID 9 but got %v", got)
 	}
 
@@ -136,16 +136,16 @@ func TestStringSlice(t *testing.T) {
 	if err != ErrBatchNowFull {
 		t.Fatalf("adding to batch: %v", err)
 	}
-	if got, ok := b.toTranslateSets["strslice"]["d"]; ok {
+	if got, ok := b.toTranslateSets[0]["d"]; ok {
 		t.Fatalf("should be nothing at d, got: %v", got)
 	}
-	if got, ok := b.toTranslateSets["strslice"]["f"]; ok {
+	if got, ok := b.toTranslateSets[0]["f"]; ok {
 		t.Fatalf("should be nothing at f, got: %v", got)
 	}
-	if got := b.toTranslateSets["strslice"]["e"]; !reflect.DeepEqual(got, []int{2}) {
+	if got := b.toTranslateSets[0]["e"]; !reflect.DeepEqual(got, []int{2}) {
 		t.Fatalf("expected []int{2}, got: %v", got)
 	}
-	if got := b.rowIDSets["strslice"][2]; !reflect.DeepEqual(got, []uint64{10, 13}) {
+	if got := b.rowIDSets[0][2]; !reflect.DeepEqual(got, []uint64{10, 13}) {
 		t.Fatalf("expected c to map to rowID 9 but got %v", got)
 	}
 
@@ -154,11 +154,11 @@ func TestStringSlice(t *testing.T) {
 		t.Fatalf("translating: %v", err)
 	}
 
-	if got0 := b.rowIDSets["strslice"][0]; len(got0) != 1 {
+	if got0 := b.rowIDSets[0][0]; len(got0) != 1 {
 		t.Errorf("after translation, rec 0, wrong len: %v", got0)
-	} else if got1 := b.rowIDSets["strslice"][1]; len(got1) != 3 || got1[0] != 9 || (got1[1] != got0[0] && got1[2] != got0[0]) {
+	} else if got1 := b.rowIDSets[0][1]; len(got1) != 3 || got1[0] != 9 || (got1[1] != got0[0] && got1[2] != got0[0]) {
 		t.Errorf("after translation, rec 1: %v, rec 0: %v", got1, got0)
-	} else if got2 := b.rowIDSets["strslice"][2]; len(got2) != 3 || got2[0] != 10 || got2[1] != 13 || got2[2] == got1[2] || got2[2] == got0[0] {
+	} else if got2 := b.rowIDSets[0][2]; len(got2) != 3 || got2[0] != 10 || got2[1] != 13 || got2[2] == got1[2] || got2[2] == got0[0] {
 		t.Errorf("after translation, rec 2: %v", got2)
 	}
 

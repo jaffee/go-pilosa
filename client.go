@@ -1107,14 +1107,16 @@ func (c *Client) doRequest(host *URI, method, path string, headers map[string]st
 			return nil, errors.Wrap(err, "building request")
 		}
 		tries--
+		var status int
 		resp, err = c.client.Do(req)
 		if err == nil {
-			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			status = resp.StatusCode
+			if status >= 200 && status < 300 {
 				return resp, nil
 			}
 			// Pilosa nodes sometimes return 400, we retry in that case.
 			// No need to retry in other 4xx cases.
-			if resp.StatusCode > 400 && resp.StatusCode < 500 {
+			if status > 400 && status < 500 {
 				return resp, nil
 			}
 			content, err = ioutil.ReadAll(resp.Body)
@@ -1127,7 +1129,7 @@ func (c *Client) doRequest(host *URI, method, path string, headers map[string]st
 		if tries == 0 {
 			break
 		}
-		c.logger.Printf("request failed with: %v status: %d, retrying after %d more time(s) after %v ", err, resp.StatusCode, tries, sleepTime)
+		c.logger.Printf("request failed with: %v status: %d, retrying after %d more time(s) after %v ", err, status, tries, sleepTime)
 		time.Sleep(sleepTime)
 		sleepTime *= 2
 		if sleepTime > c.maxRetrySleepTime {
