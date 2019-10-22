@@ -4,9 +4,9 @@ import (
 	"time"
 
 	"github.com/pilosa/go-pilosa"
+	"github.com/pilosa/go-pilosa/egpool"
 	"github.com/pilosa/pilosa/roaring"
 	"github.com/pkg/errors"
-	"golang.org/x/sync/errgroup"
 )
 
 // TODO if using column translation, column ids might get way out of
@@ -293,6 +293,9 @@ func (b *Batch) Add(rec Row) error {
 	case uint64:
 		b.ids = append(b.ids, rid)
 	case string:
+		if rid == "" {
+			return errors.Errorf("record identifier cannot be an empty string")
+		}
 		err := handleStringID(rid)
 		if err != nil {
 			return err
@@ -317,6 +320,10 @@ func (b *Batch) Add(rec Row) error {
 		field := b.header[i]
 		switch val := rec.Values[i].(type) {
 		case string:
+			if val == "" {
+				b.rowIDs[i] = append(b.rowIDs[i], nilSentinel)
+				continue
+			}
 			rowIDs := b.rowIDs[i]
 			// translate val and append to b.rowIDs[i]
 			if rowID, ok, err := b.transCache.GetRow(b.index.Name(), field.Name(), val); err != nil {
@@ -487,7 +494,7 @@ func (b *Batch) doTranslation() error {
 		// translate keys from Pilosa
 		ids, err := b.client.TranslateRowKeys(b.headerMap[fieldName], keys)
 		if err != nil {
-			return errors.Wrap(err, "translating row keys")
+			return errors.Wrap(err, "translating row keys (sets)")
 		}
 		if err := b.transCache.AddRows(b.index.Name(), fieldName, keys, ids); err != nil {
 			return errors.Wrap(err, "adding rows to cache")
@@ -505,7 +512,7 @@ func (b *Batch) doTranslation() error {
 }
 
 func (b *Batch) doImport() error {
-	eg := errgroup.Group{}
+	eg := egpool.Group{PoolSize: 50}
 
 	frags, err := b.makeFragments()
 	if err != nil {
@@ -627,7 +634,7 @@ func (b *Batch) importValueData() error {
 	if shardWidth == 0 {
 		shardWidth = pilosa.DefaultShardWidth
 	}
-	eg := errgroup.Group{}
+	eg := egpool.Group{PoolSize: 50}
 	ids := make([]uint64, len(b.ids))
 	for i, values := range b.values {
 		field := b.header[i].Name()
