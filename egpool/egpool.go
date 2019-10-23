@@ -51,6 +51,9 @@ func (eg *Group) processJobs() error {
 }
 
 func (eg *Group) Wait() error {
+	if eg.jobs == nil {
+		return nil
+	}
 	close(eg.jobs)
 	_ = eg.poolEG.Wait() // never returns err
 	return eg.firstErr
